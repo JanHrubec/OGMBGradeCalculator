@@ -252,14 +252,14 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="max-w-3xl mx-auto px-8 py-8 font-sans">
-    <div class="text-center mb-8">
-      <h1 class="text-gray-800 text-4xl m-0">ManageBac Grades Viewer</h1>
+  <div class="max-w-3xl mx-auto px-4 sm:px-8 py-6 sm:py-8 font-sans">
+    <div class="text-center mb-6 sm:mb-8">
+      <h1 class="text-gray-800 text-3xl sm:text-4xl m-0">ManageBac Grades Viewer</h1>
     </div>
 
     <!-- Login Form -->
-    <div v-if="!sessionId" class="flex justify-center items-center min-h-[400px]">
-      <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
+    <div v-if="!sessionId" class="flex justify-center items-center min-h-[300px] sm:min-h-[400px]">
+      <div class="bg-white p-6 sm:p-8 rounded-xl shadow-lg w-full max-w-md">
         <h2 class="mt-0 text-gray-800 text-center text-2xl mb-6">Sign Into ManageBac</h2>
         
         <form @submit.prevent="handleLogin">
@@ -305,7 +305,7 @@ onMounted(async () => {
     </div>
 
     <!-- Logged In View -->
-    <div v-else class="bg-white p-8 rounded-xl shadow-lg">
+  <div v-else class="bg-white p-4 sm:p-8 rounded-xl shadow-lg">
       <!-- Classes List View -->
       <div v-if="currentView === 'classes'">
         <div v-if="isLoading" class="text-center py-8">
@@ -313,8 +313,8 @@ onMounted(async () => {
         </div>
 
         <div v-else-if="classes.length > 0" class="mb-6">
-          <div class="flex justify-between items-center mb-6">
-            <h2 class="mt-0 mb-0 text-gray-800 text-2xl">Classes</h2>
+          <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-3 sm:gap-0">
+            <h2 class="mt-0 mb-0 text-gray-800 text-xl sm:text-2xl">Classes</h2>
             <button
               @click="logout"
               class="px-4 py-2 bg-red-600 text-white border-none rounded-lg text-sm font-semibold cursor-pointer transition-colors hover:bg-red-700"
@@ -347,7 +347,7 @@ onMounted(async () => {
 
       <!-- Tasks List View -->
       <div v-else-if="currentView === 'tasks'">
-        <div class="flex justify-between items-center mb-6">
+          <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-3 sm:gap-0">
           <div class="flex items-center gap-3">
             <button
               @click="backToClasses"
@@ -355,7 +355,7 @@ onMounted(async () => {
             >
               ← Back
             </button>
-            <h2 class="mt-0 mb-0 text-gray-800 text-2xl">{{ selectedClass?.name }}</h2>
+            <h2 class="mt-0 mb-0 text-gray-800 text-xl sm:text-2xl">{{ selectedClass?.name }}</h2>
           </div>
           <button
             @click="logout"
@@ -366,7 +366,7 @@ onMounted(async () => {
         </div>
 
         <!-- Tabs -->
-        <div class="flex gap-2 mb-6 border-b-2 border-gray-200">
+  <div class="flex gap-2 mb-6 border-b-2 border-gray-200 overflow-x-auto no-scrollbar">
           <button
             @click="currentTab = 'tasks'"
             :class="[
@@ -408,9 +408,9 @@ onMounted(async () => {
               @click="openTask(task)"
               class="bg-gray-50 p-4 rounded-lg border-2 border-gray-200 hover:border-blue-300 transition-colors cursor-pointer"
             >
-              <div class="flex justify-between items-start gap-4">
+              <div class="flex flex-col sm:flex-row justify-between items-start gap-4">
                 <div class="flex-1">
-                  <h3 class="text-gray-800 font-semibold text-lg m-0 mb-2">{{ task.name }}</h3>
+                  <h3 class="text-gray-800 font-semibold text-base sm:text-lg m-0 mb-2">{{ task.name }}</h3>
                   <div class="flex flex-wrap gap-2 text-sm text-gray-600">
                     <span v-if="task.date" class="bg-blue-100 text-blue-800 px-2 py-1 rounded">📅 {{ task.date }}</span>
                     <span 
@@ -422,7 +422,7 @@ onMounted(async () => {
                 </div>
                 <div 
                   v-if="task.grade || task.percentage !== null" 
-                  class="text-right cursor-pointer hover:bg-blue-50 px-3 py-2 rounded-lg transition-colors"
+                  class="text-right cursor-pointer hover:bg-blue-50 px-3 py-2 rounded-lg transition-colors mt-3 sm:mt-0"
                   @click="window.open(`https://opengate.managebac.com/student/classes/${task.classId}/core_tasks/${task.taskId}`, '_blank')"
                   title="Open in ManageBac"
                 >
@@ -442,11 +442,11 @@ onMounted(async () => {
         <div v-else-if="currentTab === 'averages'">
           <!-- Total Class Average -->
           <div v-if="gradeAverages.length > 0" class="bg-gray-100 p-5 rounded-lg mb-6 border-2 border-gray-300">
-            <div class="flex justify-between items-center">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-0">
               <div>
-                <h2 class="text-xl font-semibold m-0 text-gray-800">Final Weighted Grade</h2>
+                <h2 class="text-lg sm:text-xl font-semibold m-0 text-gray-800">Final Weighted Grade</h2>
               </div>
-              <div class="text-4xl font-bold text-green-600">
+              <div class="text-3xl sm:text-4xl font-bold text-green-600">
                 {{ calculateTotalClassAverage() !== null ? calculateTotalClassAverage() + '%' : 'N/A' }}
               </div>
             </div>
@@ -459,7 +459,7 @@ onMounted(async () => {
               class="bg-gray-50 p-4 rounded-lg border-2"
               :style="{ borderColor: category.color || '#d1d5db' }"
             >
-              <div class="flex justify-between items-center mb-3 gap-4">
+              <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-3 gap-3 sm:gap-4">
                 <h3 
                   class="font-semibold text-lg m-0 flex items-center gap-2 flex-1"
                 >
@@ -471,17 +471,17 @@ onMounted(async () => {
                   <span class="text-gray-800">{{ category.category }}</span>
                 </h3>
                 <!-- TEMPORARY: Weight input (will be fetched from backend in the future) -->
-                <div class="flex items-center gap-2">
+                <div class="flex items-center gap-2 mt-2 sm:mt-0">
                   <label class="text-sm text-gray-600">Weight:</label>
-                  <input
-                    type="number"
-                    :value="getCategoryWeight(category.category)"
-                    @input="updateCategoryWeight(category.category, $event.target.value)"
-                    min="0"
-                    max="100"
-                    placeholder="0"
-                    class="w-16 px-2 py-1 border-2 border-gray-300 rounded text-center font-semibold text-gray-700 focus:outline-none focus:border-blue-500"
-                  />
+                    <input
+                      type="number"
+                      :value="getCategoryWeight(category.category)"
+                      @input="updateCategoryWeight(category.category, $event.target.value)"
+                      min="0"
+                      max="100"
+                      placeholder="0"
+                      class="w-14 sm:w-16 px-2 py-1 border-2 border-gray-300 rounded text-center font-semibold text-gray-700 focus:outline-none focus:border-blue-500"
+                    />
                 </div>
                 <div class="text-green-600 font-bold text-xl">
                   {{ category.average !== null ? category.average + '%' : 'N/A' }}
@@ -506,7 +506,7 @@ onMounted(async () => {
                     >
                       ↺ Reset
                     </button>
-                    <div v-else class="w-16"></div>
+                    <div v-else class="w-14 sm:w-16"></div>
                     <input
                       type="number"
                       :value="task.percentage ?? ''"
@@ -514,7 +514,7 @@ onMounted(async () => {
                       min="0"
                       max="100"
                       placeholder="--"
-                      class="w-16 px-2 py-1 border-2 border-gray-300 rounded text-center font-semibold text-green-600 focus:outline-none focus:border-green-500"
+                      class="w-14 sm:w-16 px-2 py-1 border-2 border-gray-300 rounded text-center font-semibold text-green-600 focus:outline-none focus:border-green-500"
                     />
                     <span class="text-green-600 font-semibold">%</span>
                   </div>
@@ -537,4 +537,11 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.no-scrollbar {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
+}
 </style>
