@@ -17,6 +17,8 @@ if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, '../dist')));
 }
 
+// UTILITY
+
 function decodeHtmlEntities(text) {
   if (!text) return text;
   return text
@@ -28,12 +30,146 @@ function decodeHtmlEntities(text) {
     .replace(/&nbsp;/g, ' ');
 }
 
+function extractText(match, groupIndex = 1) {
+  return match ? decodeHtmlEntities(match[groupIndex].trim()) : null;
+}
+
+function calculatePercentage(pointsStr) {
+  if (!pointsStr || !pointsStr.includes('/')) return null;
+  
+  const [earned, total] = pointsStr.split('/').map(part => 
+    parseFloat(part.replace('pts', '').trim())
+  );
+  
+  return (!isNaN(earned) && !isNaN(total) && total > 0) 
+    ? Math.round((earned / total) * 100) 
+    : null;
+}
+
+// DATA FETCHING
+
 async function getAuthenticityToken() {
   const { data, headers } = await axios.get('https://opengate.managebac.com/login');
   const tokenMatch = data.match(/name="authenticity_token"\s+value="([^"]+)"/);
   if (!tokenMatch) throw new Error('Could not find authenticity token');
   return { token: tokenMatch[1], cookies: headers['set-cookie'] || [] };
 }
+
+async function fetchCategories(classId, sessionCookie) {
+  try {
+    const { data } = await axios.get(`https://opengate.managebac.com/student/classes/${classId}/units`, {
+      headers: { 'Cookie': sessionCookie }
+    });
+    
+    const categoryItemRegex = /<div class='list-item'>[\s\S]*?<div class='label' style='--f-label-bg:\s*(#[A-Fa-f0-9]{3,6});[^>]*>([^<]+)<\/div>[\s\S]*?<div class='cell'>(\d+)%<\/div>/g;
+    
+    const categories = [];
+    let match;
+    
+    while ((match = categoryItemRegex.exec(data)) !== null) {
+      categories.push({
+        name: decodeHtmlEntities(match[2].trim()),
+        weight: parseInt(match[3]),
+        color: match[1]
+      });
+    }
+    
+    return categories;
+  } catch (error) {
+    console.error(`Failed to fetch categories for class ${classId}:`, error.message);
+    return [];
+  }
+}
+
+async function fetchTasks(classId, sessionCookie) {
+  try {
+    const { data } = await axios.get(`https://opengate.managebac.com/student/classes/${classId}/core_tasks`, {
+      headers: { 'Cookie': sessionCookie }
+    });
+    
+    const taskBlockRegex = /<div class='fusion-card-item short-assignment section flex flex-wrap'>([\s\S]*?)<\/div>\s*(?:<a class="btn btn-primary"[\s\S]*?<\/a>\s*)?<div class='assessment[\s\S]*?<\/div>\s*<\/div>\s*<\/div>/g;
+    const patterns = {
+      name: /<a href="\/student\/classes\/\d+\/core_tasks\/(\d+)">([^<]+)<\/a>/,
+      month: /<div class="month">([^<]+)<\/div>/,
+      day: /<div class="day">([^<]+)<\/div>/,
+      labelWithColor: /<div class='label' style='--f-label-bg: (#[A-Fa-f0-9]{3,6})[^>]*>([^<]+)<\/div>/g,
+      points: /<div class='points'>([^<]+)<\/div>/,
+      grade: /<span class='grade[^>]*>([^<]+)<\/span>/
+    };
+    
+    const tasks = [];
+    let taskIndex = 0;
+    let match;
+    
+    while ((match = taskBlockRegex.exec(data)) !== null) {
+      const taskBlock = match[0];
+      
+      const nameMatch = taskBlock.match(patterns.name);
+      if (!nameMatch) continue;
+      
+      const monthMatch = taskBlock.match(patterns.month);
+      const dayMatch = taskBlock.match(patterns.day);
+      const date = (monthMatch && dayMatch) 
+        ? `${extractText(monthMatch)} ${extractText(dayMatch)}`
+        : null;
+      
+      const labelsWithColor = [...taskBlock.matchAll(patterns.labelWithColor)];
+      const category = labelsWithColor.length > 1 ? decodeHtmlEntities(labelsWithColor[1][2].trim()) : null;
+      
+      const pointsStr = extractText(taskBlock.match(patterns.points));
+      
+      tasks.push({
+        id: taskIndex++,
+        taskId: nameMatch[1],
+        classId,
+        name: decodeHtmlEntities(nameMatch[2].trim()),
+        date,
+        category,
+        points: pointsStr,
+        grade: extractText(taskBlock.match(patterns.grade)),
+        percentage: calculatePercentage(pointsStr)
+      });
+    }
+    
+    return tasks;
+  } catch (error) {
+    console.error(`Failed to fetch tasks for class ${classId}:`, error.message);
+    return [];
+  }
+}
+
+// GRADE CALCULATION
+
+function calculateFinalGrade(tasks, categories) {
+  if (!categories.length || !tasks.length) return null;
+  
+  const categoryAverages = {};
+  
+  tasks.forEach(task => {
+    if (!task.category || task.percentage === null) return;
+    
+    if (!categoryAverages[task.category]) {
+      categoryAverages[task.category] = { total: 0, count: 0 };
+    }
+    categoryAverages[task.category].total += task.percentage;
+    categoryAverages[task.category].count += 1;
+  });
+  
+  let totalWeightedScore = 0;
+  let totalWeight = 0;
+  
+  categories.forEach(category => {
+    if (category.weight > 0 && categoryAverages[category.name]) {
+      const avg = categoryAverages[category.name].total / categoryAverages[category.name].count;
+      totalWeightedScore += avg * category.weight;
+      totalWeight += category.weight;
+    }
+  });
+  
+  return totalWeight > 0 ? Math.round(totalWeightedScore / totalWeight) : null;
+}
+
+// API ROUTES
 
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
@@ -46,7 +182,13 @@ app.post('/api/login', async (req, res) => {
     
     const { data, headers } = await axios.post(
       'https://opengate.managebac.com/sessions',
-      new URLSearchParams({ authenticity_token: token, login: username, password, remember_me: '0', commit: 'Sign in' }),
+      new URLSearchParams({ 
+        authenticity_token: token, 
+        login: username, 
+        password, 
+        remember_me: '0', 
+        commit: 'Sign in' 
+      }),
       {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -101,28 +243,36 @@ app.get('/api/classes', async (req, res) => {
       });
     }
     
-    res.json({ classes });
+    const classesWithGrades = await Promise.all(
+      classes.map(async (cls) => {
+        try {
+          const [categories, tasks] = await Promise.all([
+            fetchCategories(cls.id, sessionCookie),
+            fetchTasks(cls.id, sessionCookie)
+          ]);
+          
+          const finalGrade = calculateFinalGrade(tasks, categories);
+          
+          return {
+            ...cls,
+            finalGrade
+          };
+        } catch (error) {
+          console.error(`Failed to fetch grade for class ${cls.id}:`, error.message);
+          return {
+            ...cls,
+            finalGrade: null
+          };
+        }
+      })
+    );
+    
+    res.json({ classes: classesWithGrades });
     
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch classes' });
   }
 });
-
-function extractText(match, groupIndex = 1) {
-  return match ? decodeHtmlEntities(match[groupIndex].trim()) : null;
-}
-
-function calculatePercentage(pointsStr) {
-  if (!pointsStr || !pointsStr.includes('/')) return null;
-  
-  const [earned, total] = pointsStr.split('/').map(part => 
-    parseFloat(part.replace('pts', '').trim())
-  );
-  
-  return (!isNaN(earned) && !isNaN(total) && total > 0) 
-    ? Math.round((earned / total) * 100) 
-    : null;
-}
 
 app.get('/api/tasks/:classId', async (req, res) => {
   const { sessionId } = req.query;
@@ -138,106 +288,16 @@ app.get('/api/tasks/:classId', async (req, res) => {
   }
   
   try {
-    const { data } = await axios.get(`https://opengate.managebac.com/student/classes/${classId}/core_tasks`, {
-      headers: { 'Cookie': sessionCookie }
-    });
-    
-    const taskBlockRegex = /<div class='fusion-card-item short-assignment section flex flex-wrap'>([\s\S]*?)<\/div>\s*(?:<a class="btn btn-primary"[\s\S]*?<\/a>\s*)?<div class='assessment[\s\S]*?<\/div>\s*<\/div>\s*<\/div>/g;
-    const patterns = {
-      name: /<a href="\/student\/classes\/\d+\/core_tasks\/(\d+)">([^<]+)<\/a>/,
-      month: /<div class="month">([^<]+)<\/div>/,
-      day: /<div class="day">([^<]+)<\/div>/,
-      labelWithColor: /<div class='label' style='--f-label-bg: (#[A-Fa-f0-9]{3,6})[^>]*>([^<]+)<\/div>/g,
-      points: /<div class='points'>([^<]+)<\/div>/,
-      grade: /<span class='grade[^>]*>([^<]+)<\/span>/
-    };
-    
-    const tasks = [];
-    let taskIndex = 0;
-    let match;
-    
-    while ((match = taskBlockRegex.exec(data)) !== null) {
-      const taskBlock = match[0];
-      
-      const nameMatch = taskBlock.match(patterns.name);
-      if (!nameMatch) throw new Error('There was no task name found: ' + taskBlock);
-      const taskId = nameMatch[1];
-      const name = decodeHtmlEntities(nameMatch[2].trim());
-      
-      const monthMatch = taskBlock.match(patterns.month);
-      const dayMatch = taskBlock.match(patterns.day);
-      const date = (monthMatch && dayMatch) 
-        ? `${extractText(monthMatch)} ${extractText(dayMatch)}`
-        : null;
-      
-      const labelsWithColor = [...taskBlock.matchAll(patterns.labelWithColor)];
-      const category = labelsWithColor.length > 1 ? decodeHtmlEntities(labelsWithColor[1][2].trim()) : null;
-      const categoryColor = labelsWithColor.length > 1 ? labelsWithColor[1][1] : null;
-      
-      const pointsStr = extractText(taskBlock.match(patterns.points));
-      const grade = extractText(taskBlock.match(patterns.grade));
-      const percentage = calculatePercentage(pointsStr);
-      
-      tasks.push({
-        id: taskIndex++,
-        taskId,
-        classId,
-        name,
-        date,
-        category,
-        categoryColor,
-        points: pointsStr,
-        grade,
-        percentage
-      });
-    }
-    
-    const categoryAverages = {};
-    const categorizedTasks = {};
-    const categoryColors = {};
-    
-    tasks.forEach(task => {
-      const cat = task.category || 'Uncategorized';
-      
-      if (!categorizedTasks[cat]) {
-        categorizedTasks[cat] = [];
-      }
-      categorizedTasks[cat].push(task);
-      
-      if (task.categoryColor && !categoryColors[cat]) {
-        categoryColors[cat] = task.categoryColor;
-      }
-      
-      if (task.percentage !== null) {
-        if (!categoryAverages[cat]) {
-          categoryAverages[cat] = { total: 0, count: 0 };
-        }
-        categoryAverages[cat].total += task.percentage;
-        categoryAverages[cat].count += 1;
-      }
-    });
-    
-    const gradeAverages = Object.keys(categorizedTasks).map(category => ({
-      category,
-      color: categoryColors[category] || null,
-      average: categoryAverages[category] 
-        ? Math.round(categoryAverages[category].total / categoryAverages[category].count) 
-        : null,
-      tasks: categorizedTasks[category].map(t => ({
-        name: t.name,
-        date: t.date,
-        percentage: t.percentage
-      }))
-    }));
-    
-    res.json({ tasks, gradeAverages });
-    
+    const [categories, tasks] = await Promise.all([
+      fetchCategories(classId, sessionCookie),
+      fetchTasks(classId, sessionCookie)
+    ]);
+    res.json({ tasks, categories });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch tasks' });
   }
 });
 
-// Serve Vue app for all other routes in production
 if (process.env.NODE_ENV === 'production') {
   app.use((req, res) => {
     res.sendFile(path.join(__dirname, '../dist/index.html'));

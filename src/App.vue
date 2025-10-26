@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import axios from 'axios'
 
 const API_BASE_URL = import.meta.env.PROD ? '/api' : 'http://localhost:3001/api'
@@ -13,65 +13,70 @@ const classes = ref([])
 const currentView = ref('classes')
 const selectedClass = ref(null)
 const tasks = ref([])
-const gradeAverages = ref([])
+const categories = ref([])
 const originalGradeAverages = ref([])
 const currentTab = ref('tasks')
 
-// TEMPORARY
-const categoryWeights = ref({})
+const gradeAverages = computed(() => {
+  if (!categories.value.length || !tasks.value.length) return []
+  
+  const categorizedTasks = {}
+  const categoryAverages = {}
+  
+  tasks.value.forEach(task => {
+    const cat = task.category
+    if (!cat) return
+    
+    if (!categorizedTasks[cat]) {
+      categorizedTasks[cat] = []
+    }
+    categorizedTasks[cat].push(task)
+    
+    if (task.percentage !== null) {
+      if (!categoryAverages[cat]) {
+        categoryAverages[cat] = { total: 0, count: 0 }
+      }
+      categoryAverages[cat].total += task.percentage
+      categoryAverages[cat].count += 1
+    }
+  })
+  
+  return categories.value.map(category => {
+    const categoryTasks = categorizedTasks[category.name] || []
+    const avg = categoryAverages[category.name]
+    
+    return {
+      category: category.name,
+      color: category.color,
+      weight: category.weight,
+      average: avg ? Math.round(avg.total / avg.count) : null,
+      tasks: categoryTasks.map(t => ({
+        name: t.name,
+        date: t.date,
+        percentage: t.percentage
+      }))
+    }
+  })
+})
 
-// TEMPORARY
-const loadCategoryWeights = (classId) => {
-  const stored = localStorage.getItem(`categoryWeights_${classId}`)
-  if (stored) {
-    categoryWeights.value = JSON.parse(stored)
-  } else {
-    categoryWeights.value = {}
-  }
-}
-
-// TEMPORARY
-const saveCategoryWeights = (classId) => {
-  localStorage.setItem(`categoryWeights_${classId}`, JSON.stringify(categoryWeights.value))
-}
-
-// TEMPORARY
-const updateCategoryWeight = (category, value) => {
-  const numValue = value === '' ? 0 : parseFloat(value)
-  if (!isNaN(numValue) && numValue >= 0 && numValue <= 100) {
-    categoryWeights.value[category] = numValue
-    saveCategoryWeights(selectedClass.value.id)
-  }
-}
-
-// TEMPORARY
-const getCategoryWeight = (category) => {
-  return categoryWeights.value[category] || 0
-}
-
-const calculateTotalClassAverage = () => {
-  const categoriesWithAverages = gradeAverages.value.filter(cat => cat.average !== null)
+const calculateTotalClassAverage = computed(() => {
+  const categoriesWithAverages = gradeAverages.value.filter(cat => cat.average !== null && cat.weight > 0)
   if (categoriesWithAverages.length === 0) return null
   
   let totalWeightedScore = 0
   let totalWeight = 0
   
   categoriesWithAverages.forEach(category => {
-    const weight = getCategoryWeight(category.category)
-    if (weight > 0 && category.average !== null) {
-      totalWeightedScore += (category.average * weight)
-      totalWeight += weight
-    }
+    totalWeightedScore += (category.average * category.weight)
+    totalWeight += category.weight
   })
   
-  return totalWeight > 0 ? Math.round((totalWeightedScore / totalWeight)) : null
-}
+  return totalWeight > 0 ? Math.round(totalWeightedScore / totalWeight) : null
+})
 
-const calculateCategoryAverage = (tasks) => {
-  const validTasks = tasks.filter(t => t.percentage !== null && t.percentage !== undefined)
-  if (validTasks.length === 0) return null
-  const total = validTasks.reduce((sum, task) => sum + task.percentage, 0)
-  return Math.round(total / validTasks.length)
+const getCategoryColor = (categoryName) => {
+  const category = categories.value.find(c => c.name === categoryName)
+  return category?.color || '#f97316'
 }
 
 const isTaskModified = (categoryIndex, taskIndex) => {
@@ -83,10 +88,12 @@ const isTaskModified = (categoryIndex, taskIndex) => {
 
 const restoreOriginalValue = (categoryIndex, taskIndex) => {
   const original = originalGradeAverages.value[categoryIndex].tasks[taskIndex]
-  gradeAverages.value[categoryIndex].tasks[taskIndex].percentage = original.percentage
-  gradeAverages.value[categoryIndex].average = calculateCategoryAverage(
-    gradeAverages.value[categoryIndex].tasks
-  )
+  const currentCategory = gradeAverages.value[categoryIndex]
+  const taskName = currentCategory.tasks[taskIndex].name
+  const task = tasks.value.find(t => t.name === taskName && t.category === currentCategory.category)
+  if (task) {
+    task.percentage = original.percentage
+  }
 }
 
 const updatePercentage = (categoryIndex, taskIndex, value) => {
@@ -94,10 +101,13 @@ const updatePercentage = (categoryIndex, taskIndex, value) => {
   if (numValue !== null && (isNaN(numValue) || numValue < 0 || numValue > 100)) {
     return
   }
-  gradeAverages.value[categoryIndex].tasks[taskIndex].percentage = numValue
-  gradeAverages.value[categoryIndex].average = calculateCategoryAverage(
-    gradeAverages.value[categoryIndex].tasks
-  )
+  
+  const currentCategory = gradeAverages.value[categoryIndex]
+  const taskName = currentCategory.tasks[taskIndex].name
+  const task = tasks.value.find(t => t.name === taskName && t.category === currentCategory.category)
+  if (task) {
+    task.percentage = numValue
+  }
 }
 
 const openTask = (task) => {
@@ -190,17 +200,15 @@ const fetchTasks = async (classId) => {
     const { data } = await axios.get(`${API_BASE_URL}/tasks/${classId}`, {
       params: { sessionId: sessionId.value }
     })
-    // Sort tasks by date
+    
+    categories.value = data.categories || []
     tasks.value = data.tasks.sort((a, b) => {
       const dateA = parseTaskDate(a.date)
       const dateB = parseTaskDate(b.date)
       return dateB - dateA
     })
-    gradeAverages.value = data.gradeAverages
-    // Deep copy for original values
-    originalGradeAverages.value = JSON.parse(JSON.stringify(data.gradeAverages))
-    // TEMPORARY
-    loadCategoryWeights(classId)
+    
+    originalGradeAverages.value = JSON.parse(JSON.stringify(gradeAverages.value))
   } catch (err) {
     error.value = 'Failed to fetch tasks'
     if (err.response?.status === 401) {
@@ -221,7 +229,7 @@ const backToClasses = () => {
   currentView.value = 'classes'
   selectedClass.value = null
   tasks.value = []
-  gradeAverages.value = []
+  categories.value = []
   originalGradeAverages.value = []
   currentTab.value = 'tasks'
   error.value = ''
@@ -233,7 +241,7 @@ const logout = () => {
   sessionId.value = null
   classes.value = []
   tasks.value = []
-  gradeAverages.value = []
+  categories.value = []
   originalGradeAverages.value = []
   currentTab.value = 'tasks'
   currentView.value = 'classes'
@@ -327,9 +335,14 @@ onMounted(async () => {
               v-for="cls in classes" 
               :key="cls.id" 
               @click="openClass(cls)"
-              class="bg-gray-100 text-gray-800 px-4 py-3 rounded-lg flex justify-between items-center hover:bg-gray-200 transition-colors cursor-pointer border-2 border-gray-300"
+              class="bg-gray-100 text-gray-800 px-4 py-3 rounded-lg flex flex-col sm:flex-row justify-between sm:items-center gap-2 hover:bg-gray-200 transition-colors cursor-pointer border-2 border-gray-300"
             >
               <span class="font-medium">{{ cls.name }}</span>
+              <div v-if="cls.finalGrade !== null" class="flex items-center gap-2 shrink-0">
+                <span class="text-xs text-gray-600 whitespace-nowrap">Final Grade:</span>
+                <span class="inline-flex items-center justify-center w-14 px-2 py-0.5 bg-green-600 text-white rounded font-semibold text-sm">{{ cls.finalGrade }}%</span>
+              </div>
+              <div v-else class="text-gray-400 text-sm italic">No grades yet</div>
             </div>
           </div>
         </div>
@@ -366,11 +379,11 @@ onMounted(async () => {
         </div>
 
         <!-- Tabs -->
-  <div class="flex gap-2 mb-6 border-b-2 border-gray-200 overflow-x-auto no-scrollbar">
+  <div class="flex gap-2 mb-6 border-b-2 border-gray-200">
           <button
             @click="currentTab = 'tasks'"
             :class="[
-              'px-4 py-2 font-semibold transition-colors',
+              'px-4 py-2 font-semibold transition-colors shrink-0',
               currentTab === 'tasks' 
                 ? 'text-blue-600 border-b-2 border-blue-600 -mb-0.5' 
                 : 'text-gray-600 hover:text-gray-800'
@@ -381,7 +394,7 @@ onMounted(async () => {
           <button
             @click="currentTab = 'averages'"
             :class="[
-              'px-4 py-2 font-semibold transition-colors',
+              'px-4 py-2 font-semibold transition-colors shrink-0',
               currentTab === 'averages' 
                 ? 'text-blue-600 border-b-2 border-blue-600 -mb-0.5' 
                 : 'text-gray-600 hover:text-gray-800'
@@ -416,7 +429,7 @@ onMounted(async () => {
                     <span 
                       v-if="task.category" 
                       class="px-2 py-1 rounded text-white font-medium"
-                      :style="{ backgroundColor: task.categoryColor || '#f97316' }"
+                      :style="{ backgroundColor: getCategoryColor(task.category) }"
                     >{{ task.category }}</span>
                   </div>
                 </div>
@@ -447,7 +460,7 @@ onMounted(async () => {
                 <h2 class="text-lg sm:text-xl font-semibold m-0 text-gray-800">Final Weighted Grade</h2>
               </div>
               <div class="text-3xl sm:text-4xl font-bold text-green-600">
-                {{ calculateTotalClassAverage() !== null ? calculateTotalClassAverage() + '%' : 'N/A' }}
+                {{ calculateTotalClassAverage !== null ? calculateTotalClassAverage + '%' : 'N/A' }}
               </div>
             </div>
           </div>
@@ -470,18 +483,9 @@ onMounted(async () => {
                   ></span>
                   <span class="text-gray-800">{{ category.category }}</span>
                 </h3>
-                <!-- TEMPORARY: Weight input (will be fetched from backend in the future) -->
                 <div class="flex items-center gap-2 mt-2 sm:mt-0">
-                  <label class="text-sm text-gray-600">Weight:</label>
-                    <input
-                      type="number"
-                      :value="getCategoryWeight(category.category)"
-                      @input="updateCategoryWeight(category.category, $event.target.value)"
-                      min="0"
-                      max="100"
-                      placeholder="0"
-                      class="w-14 sm:w-16 px-2 py-1 border-2 border-gray-300 rounded text-center font-semibold text-gray-700 focus:outline-none focus:border-blue-500"
-                    />
+                  <span class="text-sm text-gray-600">Weight:</span>
+                  <span class="px-3 py-1 bg-gray-200 rounded font-semibold text-gray-700">{{ category.weight }}%</span>
                 </div>
                 <div class="text-green-600 font-bold text-xl">
                   {{ category.average !== null ? category.average + '%' : 'N/A' }}
