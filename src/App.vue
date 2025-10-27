@@ -51,6 +51,7 @@ const gradeAverages = computed(() => {
       weight: category.weight,
       average: avg ? Math.round(avg.total / avg.count) : null,
       tasks: categoryTasks.map(t => ({
+        id: t.id,
         name: t.name,
         date: t.date,
         percentage: t.percentage
@@ -89,8 +90,8 @@ const isTaskModified = (categoryIndex, taskIndex) => {
 const restoreOriginalValue = (categoryIndex, taskIndex) => {
   const original = originalGradeAverages.value[categoryIndex].tasks[taskIndex]
   const currentCategory = gradeAverages.value[categoryIndex]
-  const taskName = currentCategory.tasks[taskIndex].name
-  const task = tasks.value.find(t => t.name === taskName && t.category === currentCategory.category)
+  const taskId = currentCategory.tasks[taskIndex].id
+  const task = tasks.value.find(t => t.id === taskId)
   if (task) {
     task.percentage = original.percentage
   }
@@ -103,8 +104,8 @@ const updatePercentage = (categoryIndex, taskIndex, value) => {
   }
   
   const currentCategory = gradeAverages.value[categoryIndex]
-  const taskName = currentCategory.tasks[taskIndex].name
-  const task = tasks.value.find(t => t.name === taskName && t.category === currentCategory.category)
+  const taskId = currentCategory.tasks[taskIndex].id
+  const task = tasks.value.find(t => t.id === taskId)
   if (task) {
     task.percentage = numValue
   }
