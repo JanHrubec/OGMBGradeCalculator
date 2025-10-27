@@ -280,8 +280,16 @@ onMounted(async () => {
 
 <template>
   <div class="max-w-3xl mx-auto px-4 sm:px-8 py-6 sm:py-8 font-sans">
-    <div class="text-center mb-6 sm:mb-8">
-      <h1 class="text-gray-800 text-3xl sm:text-4xl m-0">ManageBac Grades Viewer</h1>
+    <!-- Header with Title and Logout -->
+    <div class="flex justify-between items-center mb-6 sm:mb-8">
+      <h1 class="text-gray-800 text-2xl sm:text-3xl md:text-4xl m-0">ManageBac Grades Viewer</h1>
+      <button
+        v-if="sessionId"
+        @click="logout"
+        class="px-3 py-1.5 sm:px-4 sm:py-2 bg-red-600 text-white border-none rounded-lg text-xs sm:text-sm font-semibold cursor-pointer transition-colors hover:bg-red-700 shrink-0"
+      >
+        Logout
+      </button>
     </div>
 
     <!-- Login Form -->
@@ -340,15 +348,7 @@ onMounted(async () => {
         </div>
 
         <div v-else-if="classes.length > 0" class="mb-6">
-          <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-3 sm:gap-0">
-            <h2 class="mt-0 mb-0 text-gray-800 text-xl sm:text-2xl">Classes</h2>
-            <button
-              @click="logout"
-              class="px-4 py-2 bg-red-600 text-white border-none rounded-lg text-sm font-semibold cursor-pointer transition-colors hover:bg-red-700"
-            >
-              Logout
-            </button>
-          </div>
+          <h2 class="mt-0 mb-4 text-gray-800 text-xl sm:text-2xl">Classes</h2>
           <div class="grid grid-cols-1 gap-3">
             <div 
               v-for="cls in classes" 
@@ -367,34 +367,20 @@ onMounted(async () => {
         </div>
 
         <div v-else class="text-center py-4">
-          <p class="text-gray-600 mb-4">No classes found.</p>
-          <button
-            @click="logout"
-            class="px-4 py-2 bg-red-600 text-white border-none rounded-lg text-sm font-semibold cursor-pointer transition-colors hover:bg-red-700"
-          >
-            Logout
-          </button>
+          <p class="text-gray-600">No classes found.</p>
         </div>
       </div>
 
       <!-- Tasks List View -->
       <div v-else-if="currentView === 'tasks'">
-          <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-3 sm:gap-0">
-          <div class="flex items-center gap-3">
-            <button
-              @click="backToClasses"
-              class="px-3 py-2 bg-gray-200 text-gray-700 border-none rounded-lg text-sm font-semibold cursor-pointer transition-colors hover:bg-gray-300"
-            >
-              ← Back
-            </button>
-            <h2 class="mt-0 mb-0 text-gray-800 text-xl sm:text-2xl">{{ selectedClass?.name }}</h2>
-          </div>
+        <div class="flex items-center gap-3 mb-6">
           <button
-            @click="logout"
-            class="px-4 py-2 bg-red-600 text-white border-none rounded-lg text-sm font-semibold cursor-pointer transition-colors hover:bg-red-700"
+            @click="backToClasses"
+            class="px-3 py-2 bg-gray-200 text-gray-700 border-none rounded-lg text-sm font-semibold cursor-pointer transition-colors hover:bg-gray-300"
           >
-            Logout
+            ← Back
           </button>
+          <h2 class="mt-0 mb-0 text-gray-800 text-xl sm:text-2xl">{{ selectedClass?.name }}</h2>
         </div>
 
         <!-- Tabs -->
