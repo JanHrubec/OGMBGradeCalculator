@@ -3,6 +3,9 @@ import cors from 'cors';
 import axios from 'axios';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import crypto from 'crypto';
+import rateLimit from 'express-rate-limit';
+import cookieParser from 'cookie-parser';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -10,14 +13,48 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const userSessions = new Map();
 
-app.use(cors({ origin: true, credentials: true }));
+const SESSION_TIMEOUT = 24 * 60 * 60 * 1000; // 24 hours
+
+app.use(cors({
+  origin: true,
+  credentials: true
+}));
+
 app.use(express.json());
+app.use(cookieParser());
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: 'Too many login attempts, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, '../dist')));
 }
 
-// UTILITY
+// UTILITY FUNCTIONS
+
+function generateSessionId() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+function isSessionValid(session) {
+  if (!session) return false;
+  return Date.now() - session.lastAccess < SESSION_TIMEOUT;
+}
+
+function getValidSession(sessionId) {
+  const session = userSessions.get(sessionId);
+  if (!session || !isSessionValid(session)) {
+    if (session) userSessions.delete(sessionId);
+    return null;
+  }
+  session.lastAccess = Date.now();
+  return session;
+}
 
 function decodeHtmlEntities(text) {
   if (!text) return text;
@@ -171,7 +208,7 @@ function calculateFinalGrade(tasks, categories) {
 
 // API ROUTES
 
-app.post('/api/login', async (req, res) => {
+app.post('/api/login', loginLimiter, async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
     return res.status(400).json({ error: 'Username and password required' });
@@ -208,28 +245,59 @@ app.post('/api/login', async (req, res) => {
       return res.status(401).json({ error: 'Login failed' });
     }
     
-    userSessions.set(username, sessionCookies.map(c => c.split(';')[0]).join('; '));
-    res.json({ success: true, sessionId: username });
+    const sessionId = generateSessionId();
+    
+    userSessions.set(sessionId, {
+      username: username,
+      cookie: sessionCookies.map(c => c.split(';')[0]).join('; '),
+      createdAt: Date.now(),
+      lastAccess: Date.now()
+    });
+    
+    res.cookie('sessionId', sessionId, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: SESSION_TIMEOUT
+    });
+    
+    res.json({ success: true });
     
   } catch (error) {
     res.status(401).json({ error: 'Login failed - please check your credentials' });
   }
 });
 
+app.post('/api/logout', (req, res) => {
+  const sessionId = req.cookies.sessionId;
+  
+  if (sessionId) {
+    userSessions.delete(sessionId);
+  }
+  
+  res.clearCookie('sessionId', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict'
+  });
+  
+  res.json({ success: true });
+});
+
 app.get('/api/classes', async (req, res) => {
-  const { sessionId } = req.query;
+  const sessionId = req.cookies.sessionId;
   if (!sessionId) {
     return res.status(400).json({ error: 'Session ID required' });
   }
   
-  const sessionCookie = userSessions.get(sessionId);
-  if (!sessionCookie) {
-    return res.status(401).json({ error: 'Session not found' });
+  const session = getValidSession(sessionId);
+  if (!session) {
+    return res.status(401).json({ error: 'Session expired or invalid' });
   }
   
   try {
     const { data } = await axios.get('https://opengate.managebac.com/student/classes/my', {
-      headers: { 'Cookie': sessionCookie }
+      headers: { 'Cookie': session.cookie }
     });
     
     const classRegex = /id='ib_class_(\d+)'[\s\S]*?<a href="\/student\/classes\/\d+">([^<\n]+)/g;
@@ -247,8 +315,8 @@ app.get('/api/classes', async (req, res) => {
       classes.map(async (cls) => {
         try {
           const [categories, tasks] = await Promise.all([
-            fetchCategories(cls.id, sessionCookie),
-            fetchTasks(cls.id, sessionCookie)
+            fetchCategories(cls.id, session.cookie),
+            fetchTasks(cls.id, session.cookie)
           ]);
           
           const finalGrade = calculateFinalGrade(tasks, categories);
@@ -275,22 +343,22 @@ app.get('/api/classes', async (req, res) => {
 });
 
 app.get('/api/tasks/:classId', async (req, res) => {
-  const { sessionId } = req.query;
+  const sessionId = req.cookies.sessionId;
   const { classId } = req.params;
   
   if (!sessionId) {
     return res.status(400).json({ error: 'Session ID required' });
   }
   
-  const sessionCookie = userSessions.get(sessionId);
-  if (!sessionCookie) {
-    return res.status(401).json({ error: 'Session not found' });
+  const session = getValidSession(sessionId);
+  if (!session) {
+    return res.status(401).json({ error: 'Session expired or invalid' });
   }
   
   try {
     const [categories, tasks] = await Promise.all([
-      fetchCategories(classId, sessionCookie),
-      fetchTasks(classId, sessionCookie)
+      fetchCategories(classId, session.cookie),
+      fetchTasks(classId, session.cookie)
     ]);
     res.json({ tasks, categories });
   } catch (error) {

@@ -163,32 +163,40 @@ const handleLogin = async () => {
     const { data } = await axios.post(`${API_BASE_URL}/login`, {
       username: username.value,
       password: password.value
+    }, {
+      withCredentials: true
     })
 
     if (data.success) {
-      sessionId.value = data.sessionId
-      localStorage.setItem('sessionId', data.sessionId)
+      sessionId.value = 'authenticated'
       await fetchClasses()
     }
   } catch (err) {
-    error.value = err.response?.data?.error || 'Login failed. Please check your credentials.'
+    if (err.response?.status === 429) {
+      error.value = 'Too many login attempts. Please try again later.'
+    } else {
+      error.value = err.response?.data?.error || 'Login failed. Please check your credentials.'
+    }
   } finally {
     isLoading.value = false
   }
 }
 
-const fetchClasses = async () => {
+const fetchClasses = async (silent = false) => {
   isLoading.value = true
   try {
     const { data } = await axios.get(`${API_BASE_URL}/classes`, {
-      params: { sessionId: sessionId.value }
+      withCredentials: true
     })
     classes.value = data.classes
   } catch (err) {
-    error.value = 'Failed to fetch classes'
+    if (!silent) {
+      error.value = 'Failed to fetch classes'
+    }
     if (err.response?.status === 401) {
       logout()
     }
+    throw err
   } finally {
     isLoading.value = false
   }
@@ -199,7 +207,7 @@ const fetchTasks = async (classId) => {
   error.value = ''
   try {
     const { data } = await axios.get(`${API_BASE_URL}/tasks/${classId}`, {
-      params: { sessionId: sessionId.value }
+      withCredentials: true
     })
     
     categories.value = data.categories || []
@@ -236,7 +244,15 @@ const backToClasses = () => {
   error.value = ''
 }
 
-const logout = () => {
+const logout = async () => {
+  try {
+    await axios.post(`${API_BASE_URL}/logout`, {}, {
+      withCredentials: true
+    })
+  } catch (err) {
+    console.error('Logout error:', err)
+  }
+  
   username.value = ''
   password.value = ''
   sessionId.value = null
@@ -248,14 +264,16 @@ const logout = () => {
   currentView.value = 'classes'
   selectedClass.value = null
   error.value = ''
-  localStorage.removeItem('sessionId')
 }
 
 onMounted(async () => {
-  const savedSessionId = localStorage.getItem('sessionId')
-  if (savedSessionId) {
-    sessionId.value = savedSessionId
-    await fetchClasses()
+  try {
+    await fetchClasses(true)
+    if (classes.value.length > 0) {
+      sessionId.value = 'authenticated'
+    }
+  } catch (err) {
+    sessionId.value = null
   }
 })
 </script>
