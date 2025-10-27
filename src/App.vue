@@ -438,9 +438,9 @@ onMounted(async () => {
               v-for="task in tasks" 
               :key="task.id"
               @click="openTask(task)"
-              class="bg-gray-50 p-4 rounded-lg border-2 border-gray-200 hover:border-blue-300 transition-colors cursor-pointer"
+              class="bg-gray-50 p-3 sm:p-4 rounded-lg border-2 border-gray-200 hover:border-blue-300 transition-colors cursor-pointer"
             >
-              <div class="flex flex-col sm:flex-row justify-between items-start gap-4">
+              <div class="flex flex-col gap-3">
                 <div class="flex-1">
                   <h3 class="text-gray-800 font-semibold text-base sm:text-lg m-0 mb-2">{{ task.name }}</h3>
                   <div class="flex flex-wrap gap-2 text-sm text-gray-600">
@@ -454,13 +454,15 @@ onMounted(async () => {
                 </div>
                 <div 
                   v-if="task.grade || task.percentage !== null" 
-                  class="text-right cursor-pointer hover:bg-blue-50 px-3 py-2 rounded-lg transition-colors mt-3 sm:mt-0"
+                  class="flex justify-between items-center bg-white p-3 rounded-lg border border-gray-200"
                   @click="window.open(`https://opengate.managebac.com/student/classes/${task.classId}/core_tasks/${task.taskId}`, '_blank')"
                   title="Open in ManageBac"
                 >
-                  <div v-if="task.grade" class="text-gray-800 font-bold text-lg">{{ task.grade }}</div>
-                  <div v-if="task.points" class="text-gray-600 text-sm">{{ task.points }}</div>
-                  <div v-if="task.percentage !== null" class="text-green-600 font-semibold text-sm">{{ task.percentage }}%</div>
+                  <div class="flex gap-3 items-center">
+                    <div v-if="task.grade" class="text-gray-800 font-bold text-lg">{{ task.grade }}</div>
+                    <div v-if="task.points" class="text-gray-600 text-sm">{{ task.points }}</div>
+                  </div>
+                  <div v-if="task.percentage !== null" class="text-green-600 font-semibold text-base sm:text-lg">{{ task.percentage }}%</div>
                 </div>
               </div>
             </div>
