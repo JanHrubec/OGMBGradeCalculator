@@ -13,7 +13,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const userSessions = new Map();
 
-const SESSION_TIMEOUT = 24 * 60 * 60 * 1000; // 24 hours
+const SESSION_TIMEOUT = 48 * 60 * 60 * 1000;
 
 app.use(cors({
   origin: true,
@@ -46,13 +46,24 @@ function isSessionValid(session) {
   return Date.now() - session.lastAccess < SESSION_TIMEOUT;
 }
 
-function getValidSession(sessionId) {
+function getValidSession(sessionId, res = null) {
   const session = userSessions.get(sessionId);
   if (!session || !isSessionValid(session)) {
     if (session) userSessions.delete(sessionId);
     return null;
   }
   session.lastAccess = Date.now();
+  
+  // Refresh cookie
+  if (res) {
+    res.cookie('sessionId', sessionId, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: SESSION_TIMEOUT
+    });
+  }
+  
   return session;
 }
 
@@ -290,7 +301,7 @@ app.get('/api/classes', async (req, res) => {
     return res.status(400).json({ error: 'Session ID required' });
   }
   
-  const session = getValidSession(sessionId);
+  const session = getValidSession(sessionId, res);
   if (!session) {
     return res.status(401).json({ error: 'Session expired or invalid' });
   }
@@ -350,7 +361,7 @@ app.get('/api/tasks/:classId', async (req, res) => {
     return res.status(400).json({ error: 'Session ID required' });
   }
   
-  const session = getValidSession(sessionId);
+  const session = getValidSession(sessionId, res);
   if (!session) {
     return res.status(401).json({ error: 'Session expired or invalid' });
   }
