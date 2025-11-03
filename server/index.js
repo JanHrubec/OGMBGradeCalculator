@@ -135,12 +135,12 @@ async function fetchTasks(classId, sessionCookie) {
       headers: { 'Cookie': sessionCookie }
     });
     
-    const taskBlockRegex = /<div class='fusion-card-item short-assignment section flex flex-wrap'>([\s\S]*?)<\/div>\s*(?:<a class="btn btn-primary"[\s\S]*?<\/a>\s*)?<div class='assessment[\s\S]*?<\/div>\s*<\/div>\s*<\/div>/g;
+    const taskBlockRegex = /<div class='fusion-card-item short-assignment section hstack flex-wrap'>([\s\S]*?)(?=<div class='fusion-card-item|<\/div>\s*<\/section>)/g;
     const patterns = {
       name: /<a href="\/student\/classes\/\d+\/core_tasks\/(\d+)">([^<]+)<\/a>/,
       month: /<div class="month">([^<]+)<\/div>/,
       day: /<div class="day">([^<]+)<\/div>/,
-      labelWithColor: /<div class='label' style='--f-label-bg: (#[A-Fa-f0-9]{3,6})[^>]*>([^<]+)<\/div>/g,
+      labelWithColor: /<div class='label' style='--f-label-bg:\s*(#[A-Fa-f0-9]{3,6})[^>]*>([^<]+)<\/div>/g,
       points: /<div class='points'>([^<]+)<\/div>/,
       grade: /<span class='grade[^>]*>([^<]+)<\/span>/
     };
