@@ -16,6 +16,7 @@ const tasks = ref([])
 const categories = ref([])
 const originalGradeAverages = ref([])
 const currentTab = ref('tasks')
+const dummyForms = ref({})
 
 const gradeAverages = computed(() => {
   if (!categories.value.length || !tasks.value.length) return []
@@ -78,6 +79,60 @@ const calculateTotalClassAverage = computed(() => {
 const getCategoryColor = (categoryName) => {
   const category = categories.value.find(c => c.name === categoryName)
   return category?.color || '#f97316'
+}
+
+const generateDummyId = () => `dummy-${Date.now()}-${Math.floor(Math.random()*10000)}`
+
+const openDummyForm = (categoryIndex) => {
+  dummyForms.value[categoryIndex] = dummyForms.value[categoryIndex] || { open: false, name: '', percentage: '' }
+  dummyForms.value[categoryIndex].open = true
+}
+
+const cancelDummyForm = (categoryIndex) => {
+  if (dummyForms.value[categoryIndex]) {
+    dummyForms.value[categoryIndex].open = false
+    dummyForms.value[categoryIndex].name = ''
+    dummyForms.value[categoryIndex].percentage = ''
+  }
+}
+
+const addDummyTask = (categoryIndex) => {
+  const form = dummyForms.value[categoryIndex]
+  if (!form) return
+
+  const name = (form.name || 'New Task').trim()
+  const percRaw = form.percentage === '' ? null : parseInt(form.percentage)
+  const percentage = (percRaw !== null && !isNaN(percRaw) && percRaw >= 0 && percRaw <= 100) ? percRaw : null
+
+  const category = gradeAverages.value[categoryIndex]
+  if (!category) return
+
+  const newTask = {
+    id: generateDummyId(),
+    name,
+    date: null,
+    category: category.category,
+    percentage,
+    grade: null,
+    points: null,
+    classId: selectedClass.value?.id || null,
+    taskId: null
+  }
+
+  tasks.value.push(newTask)
+
+  if (!originalGradeAverages.value[categoryIndex]) {
+    originalGradeAverages.value[categoryIndex] = {
+      category: category.category,
+      color: category.color,
+      weight: category.weight,
+      average: category.average,
+      tasks: []
+    }
+  }
+  originalGradeAverages.value[categoryIndex].tasks.push({ id: newTask.id, name: newTask.name, date: newTask.date, percentage: newTask.percentage })
+
+  cancelDummyForm(categoryIndex)
 }
 
 const isTaskModified = (categoryIndex, taskIndex) => {
@@ -498,6 +553,50 @@ onMounted(async () => {
                   {{ category.average !== null ? category.average + '%' : 'N/A' }}
                 </div>
               </div>
+              <!-- Add Dummy Task control -->
+              <div class="flex items-center justify-between mb-3 gap-3">
+                <div></div>
+                <div class="flex items-center gap-2">
+                  <button
+                    @click="openDummyForm(categoryIndex)"
+                    class="px-3 py-1 bg-indigo-600 text-white rounded text-sm font-medium hover:bg-indigo-700 transition-colors"
+                  >
+                    + Add Dummy
+                  </button>
+                </div>
+              </div>
+
+              <div v-if="dummyForms[categoryIndex] && dummyForms[categoryIndex].open" class="mb-3 p-3 bg-white border border-gray-200 rounded">
+                <div class="flex gap-2 items-center">
+                  <input
+                    v-model="dummyForms[categoryIndex].name"
+                    type="text"
+                    placeholder="Task name"
+                    class="flex-1 px-2 py-1 border-2 border-gray-300 rounded focus:outline-none"
+                  />
+                  <input
+                    v-model="dummyForms[categoryIndex].percentage"
+                    type="number"
+                    min="0"
+                    max="100"
+                    placeholder="%"
+                    class="w-20 px-2 py-1 border-2 border-gray-300 rounded text-center"
+                  />
+                  <button
+                    @click="addDummyTask(categoryIndex)"
+                    class="px-3 py-1 bg-green-600 text-white rounded font-medium hover:bg-green-700 transition-colors"
+                  >
+                    Add
+                  </button>
+                  <button
+                    @click="cancelDummyForm(categoryIndex)"
+                    class="px-3 py-1 bg-gray-200 rounded font-medium hover:bg-gray-300 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+
               <div class="space-y-2">
                 <div 
                   v-for="(task, taskIndex) in category.tasks" 
