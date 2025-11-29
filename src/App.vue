@@ -135,6 +135,27 @@ const addDummyTask = (categoryIndex) => {
   cancelDummyForm(categoryIndex)
 }
 
+const isDummyTask = (task) => {
+  return task && typeof task.id === 'string' && task.id.startsWith('dummy-')
+}
+
+const deleteDummyTask = (categoryIndex, taskIndex) => {
+  const currentCategory = gradeAverages.value[categoryIndex]
+  if (!currentCategory) return
+  const taskId = currentCategory.tasks[taskIndex]?.id
+  if (!taskId) return
+
+  // remove from master tasks list
+  const idx = tasks.value.findIndex(t => t.id === taskId)
+  if (idx !== -1) tasks.value.splice(idx, 1)
+
+  // remove from original snapshot if present
+  if (originalGradeAverages.value[categoryIndex]) {
+    const origIdx = originalGradeAverages.value[categoryIndex].tasks.findIndex(t => t.id === taskId)
+    if (origIdx !== -1) originalGradeAverages.value[categoryIndex].tasks.splice(origIdx, 1)
+  }
+}
+
 const isTaskModified = (categoryIndex, taskIndex) => {
   if (!originalGradeAverages.value[categoryIndex]) return false
   const original = originalGradeAverages.value[categoryIndex].tasks[taskIndex]
@@ -609,7 +630,15 @@ onMounted(async () => {
                   </div>
                   <div class="flex items-center gap-2">
                     <button
-                      v-if="isTaskModified(categoryIndex, taskIndex)"
+                      v-if="isDummyTask(task)"
+                      @click="deleteDummyTask(categoryIndex, taskIndex)"
+                      class="px-2 py-1 bg-red-600 text-white rounded text-xs font-medium hover:bg-red-700 transition-colors"
+                      title="Delete dummy task"
+                    >
+                      🗑 Delete
+                    </button>
+                    <button
+                      v-else-if="isTaskModified(categoryIndex, taskIndex)"
                       @click="restoreOriginalValue(categoryIndex, taskIndex)"
                       class="px-2 py-1 bg-blue-600 text-white rounded text-xs font-medium hover:bg-blue-700 transition-colors"
                       title="Restore original value"
