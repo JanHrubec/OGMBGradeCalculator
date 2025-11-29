@@ -559,9 +559,9 @@ onMounted(async () => {
                 <div class="flex items-center gap-2">
                   <button
                     @click="openDummyForm(categoryIndex)"
-                    class="px-3 py-1 bg-indigo-600 text-white rounded text-sm font-medium hover:bg-indigo-700 transition-colors"
+                    class="px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm font-medium hover:bg-gray-300 transition-colors"
                   >
-                    + Add Dummy
+                    + Add Task
                   </button>
                 </div>
               </div>
