@@ -311,14 +311,14 @@ app.get('/api/classes', async (req, res) => {
       headers: { 'Cookie': session.cookie }
     });
     
-    const classRegex = /id='ib_class_(\d+)'[\s\S]*?<a href="\/student\/classes\/\d+">([^<\n]+)/g;
+    const classRegex = /id=['"]ib_class_(\d+)['"][\s\S]*?<a[^>]*href=['"]\/student\/classes\/\1['"][^>]*>([\s\S]*?)<\/a>/g;
     const classes = [];
     let match;
     
     while ((match = classRegex.exec(data)) !== null) {
       classes.push({
         id: match[1],
-        name: decodeHtmlEntities(match[2].trim().replace(/\s+/g, ' '))
+        name: decodeHtmlEntities(match[2].replace(/<[^>]*>/g, '').trim().replace(/\s+/g, ' '))
       });
     }
     
