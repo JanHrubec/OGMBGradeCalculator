@@ -14,43 +14,51 @@ const currentView = ref('classes')
 const selectedClass = ref(null)
 const tasks = ref([])
 const categories = ref([])
-const originalGradeAverages = ref([])
+const originalPercentages = ref({})
 const currentTab = ref('tasks')
 const dummyForms = ref({})
+
+const categoryKey = (value = '') => String(value).replace(/\s+/g, ' ').trim().normalize('NFKC').toLocaleLowerCase('en')
+const roundPercentage = (value) => Number.isFinite(value) ? Math.round(value * 10) / 10 : null
+const formatPercentage = (value) => {
+  const rounded = roundPercentage(value)
+  return rounded === null ? '' : new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(rounded)
+}
 
 const gradeAverages = computed(() => {
   if (!categories.value.length || !tasks.value.length) return []
   
-  const categorizedTasks = {}
-  const categoryAverages = {}
+  const categorizedTasks = new Map()
+  const categoryAverages = new Map()
   
   tasks.value.forEach(task => {
-    const cat = task.category
-    if (!cat) return
+    const key = categoryKey(task.category)
+    if (!key) return
     
-    if (!categorizedTasks[cat]) {
-      categorizedTasks[cat] = []
-    }
-    categorizedTasks[cat].push(task)
+    const categoryTasks = categorizedTasks.get(key) || []
+    categoryTasks.push(task)
+    categorizedTasks.set(key, categoryTasks)
     
-    if (task.percentage !== null) {
-      if (!categoryAverages[cat]) {
-        categoryAverages[cat] = { total: 0, count: 0 }
-      }
-      categoryAverages[cat].total += task.percentage
-      categoryAverages[cat].count += 1
+    if (Number.isFinite(task.percentage)) {
+      const average = categoryAverages.get(key) || { total: 0, count: 0 }
+      average.total += task.percentage
+      average.count += 1
+      categoryAverages.set(key, average)
     }
   })
   
   return categories.value.map(category => {
-    const categoryTasks = categorizedTasks[category.name] || []
-    const avg = categoryAverages[category.name]
+    const key = categoryKey(category.name)
+    const categoryTasks = categorizedTasks.get(key) || []
+    const values = categoryAverages.get(key)
+    const rawAverage = values ? values.total / values.count : null
     
     return {
       category: category.name,
       color: category.color,
       weight: category.weight,
-      average: avg ? Math.round(avg.total / avg.count) : null,
+      average: roundPercentage(rawAverage),
+      rawAverage,
       tasks: categoryTasks.map(t => ({
         id: t.id,
         name: t.name,
@@ -62,18 +70,18 @@ const gradeAverages = computed(() => {
 })
 
 const calculateTotalClassAverage = computed(() => {
-  const categoriesWithAverages = gradeAverages.value.filter(cat => cat.average !== null && cat.weight > 0)
+  const categoriesWithAverages = gradeAverages.value.filter(cat => Number.isFinite(cat.rawAverage) && cat.weight > 0)
   if (categoriesWithAverages.length === 0) return null
   
   let totalWeightedScore = 0
   let totalWeight = 0
   
   categoriesWithAverages.forEach(category => {
-    totalWeightedScore += (category.average * category.weight)
+    totalWeightedScore += (category.rawAverage * category.weight)
     totalWeight += category.weight
   })
   
-  return totalWeight > 0 ? Math.round(totalWeightedScore / totalWeight) : null
+  return totalWeight > 0 ? roundPercentage(totalWeightedScore / totalWeight) : null
 })
 
 const getCategoryColor = (categoryName) => {
@@ -101,8 +109,8 @@ const addDummyTask = (categoryIndex) => {
   if (!form) return
 
   const name = (form.name || 'New Task').trim()
-  const percRaw = form.percentage === '' ? null : parseInt(form.percentage)
-  const percentage = (percRaw !== null && !isNaN(percRaw) && percRaw >= 0 && percRaw <= 100) ? percRaw : null
+  const percRaw = form.percentage === '' ? null : Number.parseFloat(form.percentage)
+  const percentage = (percRaw !== null && Number.isFinite(percRaw) && percRaw >= 0 && percRaw <= 100) ? percRaw : null
 
   const category = gradeAverages.value[categoryIndex]
   if (!category) return
@@ -121,17 +129,6 @@ const addDummyTask = (categoryIndex) => {
 
   tasks.value.push(newTask)
 
-  if (!originalGradeAverages.value[categoryIndex]) {
-    originalGradeAverages.value[categoryIndex] = {
-      category: category.category,
-      color: category.color,
-      weight: category.weight,
-      average: category.average,
-      tasks: []
-    }
-  }
-  originalGradeAverages.value[categoryIndex].tasks.push({ id: newTask.id, name: newTask.name, date: newTask.date, percentage: newTask.percentage })
-
   cancelDummyForm(categoryIndex)
 }
 
@@ -148,34 +145,26 @@ const deleteDummyTask = (categoryIndex, taskIndex) => {
   // remove from master tasks list
   const idx = tasks.value.findIndex(t => t.id === taskId)
   if (idx !== -1) tasks.value.splice(idx, 1)
-
-  // remove from original snapshot if present
-  if (originalGradeAverages.value[categoryIndex]) {
-    const origIdx = originalGradeAverages.value[categoryIndex].tasks.findIndex(t => t.id === taskId)
-    if (origIdx !== -1) originalGradeAverages.value[categoryIndex].tasks.splice(origIdx, 1)
-  }
 }
 
 const isTaskModified = (categoryIndex, taskIndex) => {
-  if (!originalGradeAverages.value[categoryIndex]) return false
-  const original = originalGradeAverages.value[categoryIndex].tasks[taskIndex]
   const current = gradeAverages.value[categoryIndex].tasks[taskIndex]
-  return original.percentage !== current.percentage
+  return current && Object.hasOwn(originalPercentages.value, current.id)
+    && originalPercentages.value[current.id] !== current.percentage
 }
 
 const restoreOriginalValue = (categoryIndex, taskIndex) => {
-  const original = originalGradeAverages.value[categoryIndex].tasks[taskIndex]
   const currentCategory = gradeAverages.value[categoryIndex]
   const taskId = currentCategory.tasks[taskIndex].id
   const task = tasks.value.find(t => t.id === taskId)
   if (task) {
-    task.percentage = original.percentage
+    task.percentage = originalPercentages.value[taskId]
   }
 }
 
 const updatePercentage = (categoryIndex, taskIndex, value) => {
-  const numValue = value === '' ? null : parseInt(value)
-  if (numValue !== null && (isNaN(numValue) || numValue < 0 || numValue > 100)) {
+  const numValue = value === '' ? null : Number.parseFloat(value)
+  if (numValue !== null && (!Number.isFinite(numValue) || numValue < 0 || numValue > 100)) {
     return
   }
   
@@ -210,20 +199,16 @@ const parseTaskDate = (dateStr) => {
     'dec': 11
   }
   
-  const parts = dateStr.toLowerCase().split(' ')
+  if (!dateStr) return null
+  const parts = dateStr.toLowerCase().split(/\s+/)
   
   const monthName = parts[0]
   const day = parseInt(parts[1])
   const month = months[monthName]
   
-  const currentDate = new Date()
-  const currentYear = currentDate.getFullYear()
-  const currentMonth = currentDate.getMonth()
-
-  // If the task is after August and it is currently before July assume it was for last year
-  const year = (month > 7 && currentMonth < 6) ? currentYear - 1 : currentYear
-
-  return new Date(year, month, day)
+  if (!Number.isInteger(month) || !Number.isInteger(day)) return null
+  // Compare dates within an August-to-July school year; ManageBac omits the year.
+  return (month >= 7 ? month : month + 12) * 32 + day
 }
 
 const handleLogin = async () => {
@@ -245,6 +230,8 @@ const handleLogin = async () => {
 
     if (data.success) {
       sessionId.value = 'authenticated'
+      username.value = ''
+      password.value = ''
       await fetchClasses()
     }
   } catch (err) {
@@ -287,13 +274,13 @@ const fetchTasks = async (classId) => {
     })
     
     categories.value = data.categories || []
-    tasks.value = data.tasks.sort((a, b) => {
+    tasks.value = (data.tasks || []).sort((a, b) => {
       const dateA = parseTaskDate(a.date)
       const dateB = parseTaskDate(b.date)
-      return dateB - dateA
+      return dateA === null || dateB === null ? 0 : dateB - dateA
     })
     
-    originalGradeAverages.value = JSON.parse(JSON.stringify(gradeAverages.value))
+    originalPercentages.value = Object.fromEntries(tasks.value.map(task => [task.id, task.percentage]))
   } catch (err) {
     error.value = 'Failed to fetch tasks'
     if (err.response?.status === 401) {
@@ -315,7 +302,7 @@ const backToClasses = () => {
   selectedClass.value = null
   tasks.value = []
   categories.value = []
-  originalGradeAverages.value = []
+  originalPercentages.value = {}
   currentTab.value = 'tasks'
   error.value = ''
 }
@@ -335,7 +322,7 @@ const logout = async () => {
   classes.value = []
   tasks.value = []
   categories.value = []
-  originalGradeAverages.value = []
+  originalPercentages.value = {}
   currentTab.value = 'tasks'
   currentView.value = 'classes'
   selectedClass.value = null
@@ -514,17 +501,17 @@ onMounted(async () => {
                     >{{ task.category }}</span>
                   </div>
                 </div>
-                <div 
+                <div
                   v-if="task.grade || task.percentage !== null" 
                   class="flex justify-between items-center bg-white p-3 rounded-lg border border-gray-200"
-                  @click="window.open(`https://opengate.managebac.com/student/classes/${task.classId}/core_tasks/${task.taskId}`, '_blank')"
+                  @click.stop="openTask(task)"
                   title="Open in ManageBac"
                 >
                   <div class="flex gap-3 items-center">
                     <div v-if="task.grade" class="text-gray-800 font-bold text-lg">{{ task.grade }}</div>
                     <div v-if="task.points" class="text-gray-600 text-sm">{{ task.points }}</div>
                   </div>
-                  <div v-if="task.percentage !== null" class="text-green-600 font-semibold text-base sm:text-lg">{{ task.percentage }}%</div>
+                  <div v-if="task.percentage !== null" class="text-green-600 font-semibold text-base sm:text-lg">{{ formatPercentage(task.percentage) }}%</div>
                 </div>
               </div>
             </div>
@@ -551,7 +538,7 @@ onMounted(async () => {
           <div v-if="gradeAverages.length > 0" class="space-y-4">
             <div 
               v-for="(category, categoryIndex) in gradeAverages" 
-              :key="categoryIndex"
+              :key="category.category"
               class="bg-gray-50 p-4 rounded-lg border-2"
               :style="{ borderColor: category.color || '#d1d5db' }"
             >
@@ -600,6 +587,7 @@ onMounted(async () => {
                     type="number"
                     min="0"
                     max="100"
+                    step="0.1"
                     placeholder="%"
                     class="w-20 px-2 py-1 border-2 border-gray-300 rounded text-center"
                   />
@@ -621,7 +609,7 @@ onMounted(async () => {
               <div class="space-y-2">
                 <div 
                   v-for="(task, taskIndex) in category.tasks" 
-                  :key="taskIndex"
+                  :key="task.id"
                   class="flex justify-between items-center py-2 px-3 bg-white rounded border border-gray-200 gap-3"
                 >
                   <div class="flex-1">
@@ -648,10 +636,11 @@ onMounted(async () => {
                     <div v-else class="w-14 sm:w-16"></div>
                     <input
                       type="number"
-                      :value="task.percentage ?? ''"
+                      :value="task.percentage === null ? '' : roundPercentage(task.percentage)"
                       @input="updatePercentage(categoryIndex, taskIndex, $event.target.value)"
                       min="0"
                       max="100"
+                      step="0.1"
                       placeholder="--"
                       class="w-14 sm:w-16 px-2 py-1 border-2 border-gray-300 rounded text-center font-semibold text-green-600 focus:outline-none focus:border-green-500"
                     />
