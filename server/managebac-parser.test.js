@@ -22,9 +22,9 @@ test('parses class cards without depending on attribute quote style or order', (
   assert.deepEqual(parseClasses(html), [{ id: '42', name: 'Biology & Chemistry' }]);
 });
 
-test('parses categories and graded tasks from the same core tasks page', () => {
+test('parses categories and graded tasks from the current ManageBac card layout', () => {
   const html = `
-    <div class="fusion-card-item section short-assignment">
+    <div class="short-assignment section f-tile f-tile--inline">
       <div class="date-badge"><div class="month">Oct</div><div class="day">7</div></div>
       <a href="/student/classes/42/core_tasks/99"> Lab report </a>
       <div class="labels-set">
@@ -52,6 +52,22 @@ test('parses categories and graded tasks from the same core tasks page', () => {
     grade: '6',
     percentage: 75
   });
+});
+
+test('falls back to task-link metadata when ManageBac changes card classes', () => {
+  const html = `
+    <div class="unknown-card"><div class="content">
+      <div class="date-badge"><div class="month">Nov</div><div class="day">2</div></div>
+      <a href="/student/classes/9/core_tasks/7">Unclassified card</a>
+      <div class="labels-set"><div class="label">Summative</div><div class="label">Coursework</div></div>
+      <div class="assessment"><div class="points">15 / 20 pts</div></div>
+    </div></div>`;
+
+  const result = parseClassData(html, '9');
+  assert.equal(result.tasks.length, 1);
+  assert.equal(result.tasks[0].name, 'Unclassified card');
+  assert.equal(result.tasks[0].percentage, 75);
+  assert.equal(result.tasks[0].category, 'Coursework');
 });
 
 test('keeps category groups visible if ManageBac moves the weights again', () => {

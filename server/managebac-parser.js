@@ -92,6 +92,35 @@ function findTaskCategory($, element, knownCategories) {
   return [...labels].reverse().find(label => !assignmentTypes.has(categoryKey(label.name))) || null;
 }
 
+function isCoreTaskLink($, link) {
+  return /\/student\/classes\/\d+\/core_tasks\/\d+(?:[/?#]|$)/.test($(link).attr('href') || '');
+}
+
+function findTaskContainer($, link) {
+  const semanticContainer = $(link).closest([
+    '[class~="short-assignment"]',
+    '[data-testid*="task-card" i]',
+    '[data-task-id]',
+    '.fusion-card-item',
+    'article',
+    'li'
+  ].join(', ')).get(0);
+  if (semanticContainer) return semanticContainer;
+
+  // ManageBac has changed the card class more than once. As a fallback, use the
+  // nearest self-contained ancestor with exactly one task link and task metadata.
+  return $(link).parents().filter((_, ancestor) => {
+    const candidate = $(ancestor);
+    if (candidate.hasClass('tasks-list-container')) return false;
+
+    const taskLinkCount = candidate.find('a[href*="/core_tasks/"]').filter((__, anchor) => {
+      return isCoreTaskLink($, anchor);
+    }).length;
+    const hasTaskMetadata = candidate.find('.date-badge, .assessment, .labels-set, .points').length > 0;
+    return taskLinkCount === 1 && hasTaskMetadata;
+  }).first().get(0);
+}
+
 export function parseTasks(html, requestedClassId, categories = parseCategories(html)) {
   const $ = load(html);
   const knownCategories = new Set(categories.map(category => categoryKey(category.name)));
@@ -99,14 +128,14 @@ export function parseTasks(html, requestedClassId, categories = parseCategories(
 
   const taskContainers = new Set();
   $('a[href*="/core_tasks/"]').each((_, link) => {
-    if (!/\/student\/classes\/\d+\/core_tasks\/\d+/.test($(link).attr('href') || '')) return;
-    const container = $(link).closest('.fusion-card-item, [data-testid*="task-card" i], article, li').get(0);
+    if (!isCoreTaskLink($, link)) return;
+    const container = findTaskContainer($, link);
     if (container) taskContainers.add(container);
   });
 
   for (const element of taskContainers) {
     const link = $(element).find('a[href*="/core_tasks/"]').filter((__, anchor) => {
-      return /\/student\/classes\/\d+\/core_tasks\/\d+/.test($(anchor).attr('href') || '');
+      return isCoreTaskLink($, anchor);
     }).first();
     const hrefMatch = (link.attr('href') || '').match(/\/student\/classes\/(\d+)\/core_tasks\/(\d+)/);
     if (!hrefMatch) continue;
